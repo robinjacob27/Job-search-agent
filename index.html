@@ -1,5 +1,3 @@
-# Job-search-agent
-job search agent
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -443,6 +441,22 @@ job search agent
             <div class="source-chip" data-src="Foundit"><span class="dot"></span>Foundit</div>
           </div>
         </div>
+        
+        <div style="margin-top:14px; padding-top:14px; border-top: 1px solid var(--border);">
+          <div class="config-title" style="margin-bottom:10px; display: flex; align-items: center; justify-content: space-between;">
+            <span>🤖 Auto-Apply Mode</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="auto-apply-toggle" style="cursor: pointer; width: 18px; height: 18px;">
+              <label for="auto-apply-toggle" style="font-size: 12px; font-weight: 500; cursor: pointer;">Enable</label>
+            </div>
+          </div>
+          <p style="font-size: 12px; color: var(--text3); margin-bottom: 12px;">When enabled, matching jobs will be automatically applied.</p>
+          <div class="field">
+            <label>Match Score Threshold</label>
+            <input type="range" id="auto-apply-threshold" min="50" max="100" value="75" style="width: 100%;">
+            <div style="font-size: 11px; color: var(--text3); margin-top: 4px;">Only apply to jobs with match score ≥ <span id="threshold-display">75</span>%</div>
+          </div>
+        </div>
       </div>
 
       <!-- Agent Log -->
@@ -522,10 +536,25 @@ let currentFilter = 'all';
 let jobStatuses = {}; // id -> 'new'|'saved'|'applied'|'ignored'
 let agentRunning = false;
 let currentJobId = null;
+let autoApplyEnabled = false;
+let autoApplyThreshold = 75;
+let applicationsLog = [];
 
 // ── Source chips ───────────────────────────────────────────────────────────
 document.querySelectorAll('.source-chip').forEach(chip => {
   chip.addEventListener('click', () => chip.classList.toggle('active'));
+});
+
+// ── Auto-Apply controls ────────────────────────────────────────────────────
+document.getElementById('auto-apply-toggle').addEventListener('change', (e) => {
+  autoApplyEnabled = e.target.checked;
+  const label = e.target.checked ? 'Enabled' : 'Disabled';
+  console.log(`Auto-apply ${label}`);
+});
+
+document.getElementById('auto-apply-threshold').addEventListener('input', (e) => {
+  autoApplyThreshold = parseInt(e.target.value);
+  document.getElementById('threshold-display').textContent = autoApplyThreshold;
 });
 
 // ── Get active sources ─────────────────────────────────────────────────────
@@ -696,6 +725,11 @@ Return 8-12 jobs. Use real company names, realistic salaries for ${location}, an
     agentRunning = false;
 
     filterJobs('all');
+    
+    // Auto-apply if enabled
+    if (autoApplyEnabled) {
+      setTimeout(() => autoApplyToJobs(allJobs), 500);
+    }
   }, sources.length * 120 + 300);
 }
 
@@ -835,12 +869,60 @@ function filterJobs(filter, el) {
 function filterByText() { renderJobs(); }
 
 // ── Actions ────────────────────────────────────────────────────────────────
-function applyJob(id) {
+async function applyJob(id) {
   jobStatuses[id] = 'applied';
   const job = allJobs.find(j => j.id === id);
-  if (job?.apply_url) window.open(job.apply_url, '_blank');
+  
+  if (job?.apply_url) {
+    // Try to submit via backend API
+    try {
+      const response = await fetch('/api/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_id: id,
+          title: job.title,
+          company: job.company,
+          apply_url: job.apply_url
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        addLog(`✓ Auto-applied to ${job.title} at ${job.company}`, 'ok');
+        applicationsLog.push(result.application);
+      }
+    } catch (err) {
+      console.log('Backend not available, opening link in browser');
+    }
+    
+    window.open(job.apply_url, '_blank');
+  }
+  
   updateCounters();
   renderJobs();
+}
+
+// ── Auto-Apply jobs ────────────────────────────────────────────────────────
+async function autoApplyToJobs(jobs) {
+  if (!autoApplyEnabled) return;
+  
+  const eligibleJobs = jobs.filter(j => (j.match_score || 75) >= autoApplyThreshold && jobStatuses[j.id] !== 'applied');
+  
+  if (eligibleJobs.length === 0) {
+    addLog(`No jobs meet auto-apply threshold (${autoApplyThreshold}%)`, 'info');
+    return;
+  }
+  
+  addLog(`Auto-applying to ${eligibleJobs.length} job(s)...`, 'info');
+  
+  for (let i = 0; i < eligibleJobs.length; i++) {
+    const job = eligibleJobs[i];
+    await sleep(500); // Stagger applications
+    await applyJob(job.id);
+  }
+  
+  addLog(`Auto-apply complete: ${eligibleJobs.length} application(s) submitted`, 'ok');
 }
 
 function saveJob(id) {
