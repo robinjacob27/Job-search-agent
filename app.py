@@ -3,7 +3,9 @@ from datetime import datetime
 import json
 import os
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(__name__, static_folder=APP_DIR, static_url_path='')
 
 # Store applications in a simple JSON file
 APPLICATIONS_FILE = 'applications.json'
@@ -21,13 +23,13 @@ def save_applications(apps):
 # Serve static files
 @app.route('/')
 def serve_index():
-    return send_from_directory('.', 'index.html')
+    return send_from_directory(APP_DIR, 'index.html')
 
 @app.route('/<path:path>')
 def serve_static(path):
-    if path and os.path.exists(path):
-        return send_from_directory('.', path)
-    return send_from_directory('.', 'index.html')
+    if path and os.path.exists(os.path.join(APP_DIR, path)):
+        return send_from_directory(APP_DIR, path)
+    return send_from_directory(APP_DIR, 'index.html')
 
 @app.route('/api/apply', methods=['POST'])
 def submit_application():
