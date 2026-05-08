@@ -410,8 +410,20 @@
         <div class="config-title">🎯 Search Configuration</div>
         <div class="config-grid">
           <div class="field">
-            <label>Job Title / Role</label>
-            <input type="text" id="cfg-role" value="Project Manager" placeholder="e.g. Project Manager, PM, Scrum Master">
+            <label>Job Titles / Roles (Add multiple)</label>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;" id="role-chips">
+              <div class="source-chip active" data-role="Project Manager"><span class="dot"></span>Project Manager</div>
+              <div class="source-chip" data-role="Technical PM"><span class="dot"></span>Technical PM</div>
+              <div class="source-chip" data-role="Product Manager"><span class="dot"></span>Product Manager</div>
+              <div class="source-chip" data-role="Scrum Master"><span class="dot"></span>Scrum Master</div>
+              <div class="source-chip" data-role="Program Manager"><span class="dot"></span>Program Manager</div>
+              <div class="source-chip" data-role="Delivery Manager"><span class="dot"></span>Delivery Manager</div>
+              <div class="source-chip" data-role="Agile Coach"><span class="dot"></span>Agile Coach</div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="text" id="custom-role" placeholder="Add custom role..." style="flex: 1;">
+              <button class="btn btn-ghost" onclick="addCustomRole()" style="padding: 6px 12px; font-size: 12px;">Add</button>
+            </div>
           </div>
           <div class="field">
             <label>Location</label>
@@ -545,6 +557,31 @@ document.querySelectorAll('.source-chip').forEach(chip => {
   chip.addEventListener('click', () => chip.classList.toggle('active'));
 });
 
+// ── Role chips ─────────────────────────────────────────────────────────────
+document.getElementById('role-chips').querySelectorAll('.source-chip').forEach(chip => {
+  chip.addEventListener('click', () => chip.classList.toggle('active'));
+});
+
+function addCustomRole() {
+  const input = document.getElementById('custom-role');
+  const role = input.value.trim();
+  if (!role) return;
+  
+  const rolesContainer = document.getElementById('role-chips');
+  const chip = document.createElement('div');
+  chip.className = 'source-chip active';
+  chip.dataset.role = role;
+  chip.innerHTML = `<span class="dot"></span>${role}`;
+  chip.addEventListener('click', () => chip.classList.toggle('active'));
+  
+  rolesContainer.insertBefore(chip, rolesContainer.lastElementChild);
+  input.value = '';
+}
+
+document.getElementById('custom-role').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') addCustomRole();
+});
+
 // ── Auto-Apply controls ────────────────────────────────────────────────────
 document.getElementById('auto-apply-toggle').addEventListener('change', (e) => {
   autoApplyEnabled = e.target.checked;
@@ -559,7 +596,12 @@ document.getElementById('auto-apply-threshold').addEventListener('input', (e) =>
 
 // ── Get active sources ─────────────────────────────────────────────────────
 function getActiveSources() {
-  return [...document.querySelectorAll('.source-chip.active')].map(c => c.dataset.src);
+  return [...document.querySelectorAll('.source-chip.active')].filter(c => c.dataset.src).map(c => c.dataset.src);
+}
+
+// ── Get active roles ───────────────────────────────────────────────────────
+function getActiveRoles() {
+  return [...document.getElementById('role-chips').querySelectorAll('.source-chip.active')].map(c => c.dataset.role).filter(r => r);
 }
 
 // ── Logging ────────────────────────────────────────────────────────────────
@@ -585,11 +627,12 @@ async function runAgent() {
   if (agentRunning) return;
   agentRunning = true;
 
-  const role = document.getElementById('cfg-role').value || 'Project Manager';
+  const roles = getActiveRoles();
   const location = document.getElementById('cfg-location').value || 'Remote';
   const exp = document.getElementById('cfg-exp').value;
   const sources = getActiveSources();
 
+  if (roles.length === 0) { alert('Please select at least one job role.'); agentRunning = false; return; }
   if (sources.length === 0) { alert('Please select at least one job source.'); agentRunning = false; return; }
 
   // UI state
@@ -607,7 +650,7 @@ async function runAgent() {
   allJobs = [];
   renderJobs();
 
-  addLog(`Starting job search agent for: "${role}" · ${location}`, 'info');
+  addLog(`Starting job search agent for: ${roles.join(', ')} · ${location}`, 'info');
   addLog(`Selected sources: ${sources.join(', ')}`, 'info');
   setProgress(5, 'Initializing agent...');
 
@@ -619,9 +662,9 @@ async function runAgent() {
 
   const prompt = `You are an expert job search agent. Search the web for current, real job openings and return structured JSON.
 
-Search for "${role}" positions in "${location}" at ${expMap[exp]} on these portals: ${sources.join(', ')}.
+Search for ${roles.map(r => `"${r}"`).join(', ')} positions in "${location}" at ${expMap[exp]} on these portals: ${sources.join(', ')}.
 
-Also search for relevant roles like: Program Manager, Technical Project Manager, Delivery Manager, Scrum Master, Agile Coach, Product Delivery Manager.
+Also search for related roles and similar positions across all specified portals.
 
 For each job found, provide REAL data based on your search. Return ONLY a valid JSON array (no markdown fences, no extra text) with this exact structure:
 
@@ -644,7 +687,7 @@ For each job found, provide REAL data based on your search. Return ONLY a valid 
   }
 ]
 
-Return 8-12 jobs. Use real company names, realistic salaries for ${location}, and actual recent postings you find. Focus on quality matches.`;
+Return 20-30 jobs. Use real company names, realistic salaries for ${location}, and actual recent postings you find. Focus on quality matches.`;
 
   let jobs = [];
 
@@ -688,7 +731,7 @@ Return 8-12 jobs. Use real company names, realistic salaries for ${location}, an
 
   } catch (err) {
     addLog('API call completed, generating realistic fallback data...', 'warn');
-    jobs = generateFallbackJobs(role, location, sources);
+    jobs = generateFallbackJobs(roles, location, sources);
     addLog(`Generated ${jobs.length} sample job listings for demo`, 'ok');
   }
 
@@ -734,7 +777,7 @@ Return 8-12 jobs. Use real company names, realistic salaries for ${location}, an
 }
 
 // ── Fallback jobs ─────────────────────────────────────────────────────────
-function generateFallbackJobs(role, location, sources) {
+function generateFallbackJobs(roles, location, sources) {
   const companies = [
     { name:'Tata Consultancy Services', color:'#4f7fff' },
     { name:'Infosys', color:'#2dd4a0' },
@@ -746,27 +789,43 @@ function generateFallbackJobs(role, location, sources) {
     { name:'Meesho', color:'#f5a623' },
     { name:'Zomato', color:'#f06060' },
     { name:'PhonePe', color:'#4f7fff' },
+    { name:'Batch', color:'#3dd4a0' },
+    { name:'OYO', color:'#f5a633' },
+    { name:'MakeMyTrip', color:'#4f7fff' },
+    { name:'Paytm', color:'#2dd4a0' },
+    { name:'Firstcry', color:'#7c5cfc' },
+    { name:'BigBasket', color:'#f06060' },
+    { name:'Nykaa', color:'#e84393' },
+    { name:'PolicyBazaar', color:'#3dd4a0' },
+    { name:'Practo', color:'#f5a833' },
+    { name:'Dream11', color:'#4f7fff' },
   ];
-  const titles = ['Project Manager','Senior PM','Technical PM','Delivery Manager','Program Manager','Agile PM','IT Project Manager','Digital PM'];
+  const titles = roles.length > 0 ? roles : ['Project Manager','Senior PM','Technical PM','Delivery Manager'];
   const wfh = ['Remote','Hybrid','On-site'];
-  const sal = location.toLowerCase().includes('remote') ? ['₹18–28 LPA','₹22–35 LPA','₹15–22 LPA','Not disclosed'] : ['₹12–18 LPA','₹18–26 LPA','₹20–30 LPA','Not disclosed'];
+  const sal = location.toLowerCase().includes('remote') ? ['₹18–28 LPA','₹22–35 LPA','₹15–22 LPA','₹25–40 LPA','Not disclosed'] : ['₹12–18 LPA','₹18–26 LPA','₹20–30 LPA','₹15–22 LPA','Not disclosed'];
 
-  return companies.slice(0, 10).map((c, i) => ({
-    id: `job_${i}_${Date.now()}`,
-    title: titles[i % titles.length],
-    company: c.name,
-    location: location || 'Remote',
-    work_type: wfh[i % 3],
-    source: sources[i % sources.length],
-    salary: sal[i % sal.length],
-    posted: i < 3 ? 'Today' : i < 6 ? `${i} days ago` : `${i+1} days ago`,
-    description: `Lead end-to-end delivery of digital transformation projects at ${c.name}. Collaborate with cross-functional teams across engineering, design, and business stakeholders.`,
-    requirements: `• 4+ years in project/program management\n• PMP or Agile certification preferred\n• Strong stakeholder management\n• Experience with JIRA / Confluence`,
-    match_score: 75 + Math.floor(Math.random() * 22),
-    match_reason: 'Your PM background and stakeholder management experience aligns well with this role.',
-    apply_url: `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(titles[i%titles.length])}+${encodeURIComponent(c.name)}`,
-    logo_color: c.color
-  }));
+  let jobs = [];
+  for (let i = 0; i < 25; i++) {
+    const company = companies[i % companies.length];
+    const title = titles[i % titles.length];
+    jobs.push({
+      id: `job_${i}_${Date.now()}`,
+      title: title,
+      company: company.name,
+      location: location || 'Remote',
+      work_type: wfh[i % 3],
+      source: sources[i % sources.length],
+      salary: sal[i % sal.length],
+      posted: i < 5 ? 'Today' : i < 12 ? `${Math.floor(i/2)} days ago` : `${Math.floor(i/1.5)} days ago`,
+      description: `Lead end-to-end delivery of strategic initiatives at ${company.name}. Collaborate with cross-functional teams across engineering, design, and business stakeholders.`,
+      requirements: `• ${5 + (i%3)} years in project/program management\n• ${i % 2 === 0 ? 'PMP' : 'Agile'} certification preferred\n• Strong stakeholder management\n• Experience with JIRA / Confluence / Monday.com`,
+      match_score: 72 + (i % 25),
+      match_reason: 'Your background and skills align well with this ${title.toLowerCase()} role.',
+      apply_url: `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(title)}+${encodeURIComponent(company.name)}`,
+      logo_color: company.color
+    });
+  }
+  return jobs;
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
