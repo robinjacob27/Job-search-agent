@@ -1,4 +1,5 @@
-# Job Search Agent - Auto-Apply Feature
+git push origin feature/auto-apply  # Push to GitHub
+# Then connect to railway.app → auto-deploys# Job Search Agent - Auto-Apply Feature
 
 This branch adds **Auto-Apply functionality** to the Job Search Agent dashboard.
 

@@ -874,7 +874,7 @@ async function applyJob(id) {
   const job = allJobs.find(j => j.id === id);
   
   if (job?.apply_url) {
-    // Try to submit via backend API
+    // Try to submit via backend API (use relative URL for Railway compatibility)
     try {
       const response = await fetch('/api/apply', {
         method: 'POST',
